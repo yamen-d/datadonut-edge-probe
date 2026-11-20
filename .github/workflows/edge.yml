@@ -1,0 +1,28 @@
+name: edge probe
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check api.datadonut.dev through Cloudflare
+        env:
+          HC: ${{ secrets.HC_EDGE_URL }}
+        run: |
+          set +e
+          code=$(curl -sS -o body.txt -w '%{http_code}' --max-time 10 https://api.datadonut.dev/up 2>err.txt); rc=$?
+          if [ $rc -eq 0 ] && [ "$code" = 200 ] && grep -q 'Application up' body.txt; then
+            curl -fsS -m 10 -o /dev/null "$HC"
+          else
+            case $rc in
+              0) why="[EDGE-GitHub] HTTP $code" ;;
+              6) why="[EDGE-GitHub] DNS" ;;
+              28) why="[EDGE-GitHub] no response" ;;
+              35|51|58|60) why="[EDGE-GitHub] TLS" ;;
+              *) why="[EDGE-GitHub] curl $rc" ;;
+            esac
+            curl -fsS -m 10 -o /dev/null --data-raw "$why" "$HC/fail"
+          fi
